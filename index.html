@@ -140,7 +140,11 @@
     </div>
 
     <script>
-        const API_KEY = 'c8192660aa8a221f736024987ec96af5';
+        // ⚠️ مهم جداً: هذا المفتاح كان مفتاحاً تجريبياً/مشتركاً وقد تم إيقافه من قبل TMDB.
+        // يجب استبداله بمفتاح API خاص بك (مجاني) من الرابط التالي:
+        // https://www.themoviedb.org/settings/api
+        // بعد التسجيل، انسخ "API Key (v3 auth)" وضعه هنا بدلاً من القيمة الحالية.
+        const API_KEY = 'c1532aa2e726cf64009b81018359068c';
         const BASE_URL = 'https://api.themoviedb.org/3';
         const IMAGE_BASE_URL = 'https://image.tmdb.org/t/p/w500';
 
@@ -161,25 +165,45 @@
 
             try {
                 const response = await fetch(url);
-                if (!response.ok) throw new Error('فشل الاستجابة من الخادم');
-                const data = await response.json();
-                
+                const data = await response.json().catch(() => null);
+
+                if (!response.ok) {
+                    // نعرض رسالة الخطأ الحقيقية القادمة من TMDB بدل رسالة عامة غير دقيقة
+                    const code = data && data.status_code;
+                    const msg = data && data.status_message;
+                    let reason = msg || `HTTP ${response.status}`;
+                    let hint = '';
+                    if (response.status === 401 || code === 7 || code === 16) {
+                        hint = 'مفتاح API غير صالح أو تم إيقافه. افتح ملف الكود واستبدل قيمة API_KEY بمفتاح خاص بك من themoviedb.org (راجع التعليق أعلى تعريف API_KEY في الكود).';
+                    } else if (response.status === 429) {
+                        hint = 'تم تجاوز الحد المسموح من الطلبات على هذا المفتاح (Rate Limit). انتظر قليلاً أو استخدم مفتاح API خاص بك.';
+                    }
+                    throw new Error(`${reason}${hint ? ' — ' + hint : ''}`);
+                }
+
                 // إذا كانت النتائج فارغة بالعربية، نحاول جلبها باللغة الافتراضية
-                if ((!data.results || data.results.length === 0) && query) {
+                if ((!data || !data.results || data.results.length === 0) && query) {
                     const fallbackUrl = `${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(query)}`;
                     const res2 = await fetch(fallbackUrl);
-                    const data2 = await res2.json();
-                    displayMedia(data2.results || []);
+                    const data2 = await res2.json().catch(() => null);
+                    displayMedia((data2 && data2.results) || []);
                 } else {
-                    displayMedia(data.results || []);
+                    displayMedia((data && data.results) || []);
                 }
             } catch (error) {
+                // نفرّق بين خطأ شبكة حقيقي (CORS/اتصال) وبين خطأ راجع من TMDB نفسه
+                const isNetworkError = error instanceof TypeError;
+                const message = isNetworkError
+                    ? 'تعذر الوصول إلى api.themoviedb.org. تحقق من اتصال الإنترنت، أو أن الموقع/الشبكة الحالية لا تحجب هذا النطاق، أو جرّب تعطيل أي إضافة حجب إعلانات.'
+                    : error.message;
+
                 grid.innerHTML = `
                     <div class="error-box">
                         <i class="fa-solid fa-triangle-exclamation" style="font-size: 40px; color: var(--primary); margin-bottom: 10px;"></i>
-                        <p>تعذر جلب المحتوى. قد يكون بسبب إعدادات المتصفح أو مانع الإعلانات (Brave Shields).</p>
+                        <p style="max-width:520px;margin:0 auto;">${message}</p>
                         <button onclick="fetchMedia('${endpoint}', '${query}')"><i class="fa-solid fa-rotate-right"></i> إعادة المحاولة</button>
                     </div>`;
+                console.error('TMDB fetch error:', error);
             }
         }
 
